@@ -65,11 +65,19 @@ spec:
   updatePolicy: explicit-version-bump
 ```
 
+Use the CLI to make the adoption change consistently:
+
+```sh
+temporal-gitops-config platform:bump \
+  --repo ./acme-temporal-config \
+  --platform-version platform-v1.4.0
+```
+
 Recommended promotion path:
 
 1. Tag the platform release.
-2. Open a config repo PR that bumps UAT to the new platform version.
-3. Let Argo CD reconcile UAT.
+2. Use `platform:bump` to update the customer config repo.
+3. Open a config repo PR and let Argo CD reconcile UAT first.
 4. Run Temporal scenario tests against UAT.
 5. Promote the same platform version to Prod.
 

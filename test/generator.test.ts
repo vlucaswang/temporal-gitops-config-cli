@@ -1,6 +1,9 @@
 import YAML from "yaml";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { generateConfigRepo } from "../src/generator.js";
+import { bumpPlatformVersion, generateConfigRepo, writeConfigRepo } from "../src/generator.js";
 import type { BootstrapOptions } from "../src/types.js";
 
 const baseOptions: BootstrapOptions = {
@@ -48,6 +51,23 @@ describe("generateConfigRepo", () => {
       repoURL: "https://github.com/acme/temporal-config.git",
       ref: "config",
     });
+  });
+
+  it("bumps generated config repos to a new platform release", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "temporal-config-"));
+    try {
+      await writeConfigRepo({ ...baseOptions, outputDir: dir });
+      const changed = await bumpPlatformVersion(dir, "platform-v1.2.4");
+
+      expect(changed).toEqual(["platform-release.yaml", "argocd/root-applicationset.yaml"]);
+      const release = parse(await readFile(path.join(dir, "platform-release.yaml"), "utf8"));
+      const appset = parse(await readFile(path.join(dir, "argocd/root-applicationset.yaml"), "utf8"));
+
+      expect(release.spec.targetRevision).toBe("platform-v1.2.4");
+      expect(appset.spec.template.spec.sources[0].targetRevision).toBe("platform-v1.2.4");
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
   });
 });
 

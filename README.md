@@ -35,6 +35,14 @@ npm run dev -- bootstrap \
   --yes
 ```
 
+Bump a generated config repo to a new platform release:
+
+```sh
+npm run dev -- platform:bump \
+  --repo ./acme-temporal-config \
+  --platform-version platform-v1.4.0
+```
+
 ## Validate
 
 ```sh

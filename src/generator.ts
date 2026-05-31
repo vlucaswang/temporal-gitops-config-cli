@@ -1,4 +1,4 @@
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
@@ -42,6 +42,43 @@ export async function writeConfigRepo(options: BootstrapOptions): Promise<Genera
     await writeFile(target, file.content);
   }
   return files;
+}
+
+export async function bumpPlatformVersion(
+  configRepoDir: string,
+  platformVersion: string,
+  platformRepo?: string,
+): Promise<string[]> {
+  if (!platformVersion) {
+    throw new Error("platformVersion is required");
+  }
+
+  const changed: string[] = [];
+  const releasePath = path.join(configRepoDir, "platform-release.yaml");
+  const appSetPath = path.join(configRepoDir, "argocd/root-applicationset.yaml");
+
+  const release = YAML.parse(await readFile(releasePath, "utf8"));
+  release.spec ??= {};
+  release.spec.targetRevision = platformVersion;
+  if (platformRepo) {
+    release.spec.repoURL = platformRepo;
+  }
+  await writeFile(releasePath, yaml(release));
+  changed.push("platform-release.yaml");
+
+  const appSet = YAML.parse(await readFile(appSetPath, "utf8"));
+  const sources = appSet?.spec?.template?.spec?.sources;
+  if (!Array.isArray(sources) || sources.length === 0) {
+    throw new Error("argocd/root-applicationset.yaml does not contain spec.template.spec.sources");
+  }
+  sources[0].targetRevision = platformVersion;
+  if (platformRepo) {
+    sources[0].repoURL = platformRepo;
+  }
+  await writeFile(appSetPath, yaml(appSet));
+  changed.push("argocd/root-applicationset.yaml");
+
+  return changed;
 }
 
 export function generateConfigRepo(options: BootstrapOptions): GeneratedFile[] {

@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { confirm, input, select } from "@inquirer/prompts";
 import { Command, Option } from "commander";
-import { writeConfigRepo } from "./generator.js";
+import { bumpPlatformVersion, writeConfigRepo } from "./generator.js";
 import { type BootstrapOptions, cloudProviders, tlsModes } from "./types.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -54,6 +54,20 @@ program
   .action(() => {
     console.log(`package root: ${packageRoot}`);
     console.log("node: ok");
+  });
+
+program
+  .command("platform:bump")
+  .description("Update a generated config repo to consume a new platform release.")
+  .requiredOption("-r, --repo <dir>", "path to the generated config repo")
+  .requiredOption("--platform-version <revision>", "new platform release tag or commit")
+  .option("--platform-repo <url>", "optional replacement platform repo URL")
+  .action(async (raw: { repo: string; platformVersion: string; platformRepo?: string }) => {
+    const changed = await bumpPlatformVersion(resolve(raw.repo), raw.platformVersion, raw.platformRepo);
+    console.log(`updated platform version to ${raw.platformVersion}`);
+    for (const file of changed) {
+      console.log(`  ${file}`);
+    }
   });
 
 await program.parseAsync();
