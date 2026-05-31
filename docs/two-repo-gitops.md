@@ -68,7 +68,7 @@ spec:
 Use the CLI to make the adoption change consistently:
 
 ```sh
-temporal-gitops-config platform:bump \
+npx github:vlucaswang/temporal-gitops-config-cli platform:bump \
   --repo ./acme-temporal-config \
   --platform-version platform-v1.4.0
 ```

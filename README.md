@@ -16,13 +16,13 @@ Read [docs/two-repo-gitops.md](docs/two-repo-gitops.md) for the complete model.
 Interactive:
 
 ```sh
-npm run dev -- bootstrap
+npx github:vlucaswang/temporal-gitops-config-cli bootstrap
 ```
 
 Non-interactive:
 
 ```sh
-npm run dev -- bootstrap \
+npx github:vlucaswang/temporal-gitops-config-cli bootstrap \
   --customer acme \
   --domain temporal.acme.test \
   --cloud-provider azure \
@@ -38,7 +38,7 @@ npm run dev -- bootstrap \
 Bump a generated config repo to a new platform release:
 
 ```sh
-npm run dev -- platform:bump \
+npx github:vlucaswang/temporal-gitops-config-cli platform:bump \
   --repo ./acme-temporal-config \
   --platform-version platform-v1.4.0
 ```
@@ -46,5 +46,6 @@ npm run dev -- platform:bump \
 ## Validate
 
 ```sh
+npm ci
 npm run validate
 ```

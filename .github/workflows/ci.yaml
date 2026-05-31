@@ -1,0 +1,34 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run validate
+      - name: Smoke bootstrap and bump
+        run: |
+          npm run dev -- bootstrap \
+            --customer acme \
+            --domain temporal.acme.test \
+            --cloud-provider aws \
+            --tls http01 \
+            --platform-version platform-v1.0.0 \
+            --output tmp/acme-temporal-config \
+            --force \
+            --yes
+          npm run dev -- platform:bump \
+            --repo tmp/acme-temporal-config \
+            --platform-version platform-v1.0.1
+          grep -R "platform-v1.0.1" tmp/acme-temporal-config/platform-release.yaml tmp/acme-temporal-config/argocd/root-applicationset.yaml
