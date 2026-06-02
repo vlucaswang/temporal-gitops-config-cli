@@ -46,6 +46,58 @@ The generated `argocd/root-applicationset.yaml` points Argo CD at:
 That keeps common fixes centralized while preserving a reviewable adoption step
 per customer and environment.
 
+## Repository Diagrams
+
+### Platform repo
+
+```mermaid
+flowchart TB
+  platform["Platform repo\n100+ shared Helm charts"]
+  charts["platform/charts/*\nproduction-tested defaults"]
+  policies["baked contracts\nCiliumNetworkPolicy\nServiceMonitor\ncert-manager annotations"]
+  release["platform release tag\nplatform-vX.Y.Z"]
+  fix["shared platform fix\nexample: Prometheus duplicate timestamps"]
+
+  platform --> charts
+  charts --> policies
+  fix --> charts
+  policies --> release
+```
+
+### Config repo
+
+```mermaid
+flowchart TB
+  cli["temporal-gitops-config CLI\nbootstrap wizard"]
+  settings["selected settings\ncloud provider\nTLS challenge mode"]
+  config["customer config repo\none repo per customer"]
+  uat["environments/uat/values.yaml"]
+  prod["environments/prod/values.yaml"]
+  pin["platform-release.yaml\nrepoURL + targetRevision"]
+
+  cli --> settings
+  settings --> config
+  config --> uat
+  config --> prod
+  config --> pin
+```
+
+### Argo CD reconciliation
+
+```mermaid
+flowchart LR
+  platformRelease["Platform repo\nplatform-vX.Y.Z"]
+  configRepo["Customer config repo\nUAT and Prod values"]
+  appset["Argo CD ApplicationSet\nmulti-source app"]
+  uatCluster["UAT cluster"]
+  prodCluster["Prod cluster"]
+
+  platformRelease --> appset
+  configRepo --> appset
+  appset --> uatCluster
+  appset --> prodCluster
+```
+
 ## Versioning And Release Flow
 
 Use explicit platform release tags:
