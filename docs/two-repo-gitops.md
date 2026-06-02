@@ -113,7 +113,11 @@ config repo:
 ```yaml
 spec:
   repoURL: https://github.com/example/platform.git
-  targetRevision: platform-v1.4.0
+  environments:
+    uat:
+      targetRevision: platform-v1.4.0
+    prod:
+      targetRevision: platform-v1.3.9
   updatePolicy: explicit-version-bump
 ```
 
@@ -122,16 +126,17 @@ Use the CLI to make the adoption change consistently:
 ```sh
 npx github:vlucaswang/temporal-gitops-config-cli platform:bump \
   --repo ./acme-temporal-config \
-  --platform-version platform-v1.4.0
+  --platform-version platform-v1.4.0 \
+  --environment uat
 ```
 
 Recommended promotion path:
 
 1. Tag the platform release.
-2. Use `platform:bump` to update the customer config repo.
+2. Use `platform:bump --environment uat` to update the customer config repo.
 3. Open a config repo PR and let Argo CD reconcile UAT first.
 4. Run Temporal scenario tests against UAT.
-5. Promote the same platform version to Prod.
+5. Promote the same platform version to Prod with `platform:bump --environment prod`.
 
 ## KubeAid Ideas Applied Here
 

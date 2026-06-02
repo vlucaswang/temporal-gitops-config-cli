@@ -113,19 +113,24 @@ describe("generateConfigRepo", () => {
   it("pins Argo CD to the platform repo and explicit platform version", () => {
     const files = generateConfigRepo(baseOptions);
     const appset = parse(find(files, "argocd/root-applicationset.yaml"));
+    const elements = appset.spec.generators[0].list.elements;
 
     expect(appset.spec.template.spec.sources[0]).toMatchObject({
       repoURL: "https://github.com/example/platform.git",
-      targetRevision: "platform-v1.2.3",
+      targetRevision: "{{ .targetRevision }}",
       path: "gitops/apps",
     });
     expect(appset.spec.template.spec.sources[1]).toMatchObject({
       repoURL: "https://github.com/acme/temporal-config.git",
       ref: "config",
     });
+    expect(elements).toEqual([
+      { env: "uat", namespace: "temporal-uat", targetRevision: "platform-v1.2.3" },
+      { env: "prod", namespace: "temporal-prod", targetRevision: "platform-v1.2.3" },
+    ]);
   });
 
-  it("bumps generated config repos to a new platform release", async () => {
+  it("bumps all generated config repo environments to a new platform release", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "temporal-config-"));
     try {
       await writeConfigRepo({ ...baseOptions, outputDir: dir });
@@ -135,8 +140,34 @@ describe("generateConfigRepo", () => {
       const release = parse(await readFile(path.join(dir, "platform-release.yaml"), "utf8"));
       const appset = parse(await readFile(path.join(dir, "argocd/root-applicationset.yaml"), "utf8"));
 
-      expect(release.spec.targetRevision).toBe("platform-v1.2.4");
-      expect(appset.spec.template.spec.sources[0].targetRevision).toBe("platform-v1.2.4");
+      expect(release.spec.environments.uat.targetRevision).toBe("platform-v1.2.4");
+      expect(release.spec.environments.prod.targetRevision).toBe("platform-v1.2.4");
+      expect(appset.spec.template.spec.sources[0].targetRevision).toBe("{{ .targetRevision }}");
+      expect(appset.spec.generators[0].list.elements).toEqual([
+        { env: "uat", namespace: "temporal-uat", targetRevision: "platform-v1.2.4" },
+        { env: "prod", namespace: "temporal-prod", targetRevision: "platform-v1.2.4" },
+      ]);
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it("bumps one generated config repo environment at a time", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "temporal-config-"));
+    try {
+      await writeConfigRepo({ ...baseOptions, outputDir: dir });
+      const changed = await bumpPlatformVersion(dir, "platform-v1.2.4", undefined, "uat");
+
+      expect(changed).toEqual(["platform-release.yaml", "argocd/root-applicationset.yaml"]);
+      const release = parse(await readFile(path.join(dir, "platform-release.yaml"), "utf8"));
+      const appset = parse(await readFile(path.join(dir, "argocd/root-applicationset.yaml"), "utf8"));
+
+      expect(release.spec.environments.uat.targetRevision).toBe("platform-v1.2.4");
+      expect(release.spec.environments.prod.targetRevision).toBe("platform-v1.2.3");
+      expect(appset.spec.generators[0].list.elements).toEqual([
+        { env: "uat", namespace: "temporal-uat", targetRevision: "platform-v1.2.4" },
+        { env: "prod", namespace: "temporal-prod", targetRevision: "platform-v1.2.3" },
+      ]);
     } finally {
       await rm(dir, { force: true, recursive: true });
     }

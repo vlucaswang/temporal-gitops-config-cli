@@ -6,6 +6,7 @@ import {
   type BootstrapOptions,
   type CloudProvider,
   cloudProviders,
+  type EnvironmentName,
   environments,
   type GeneratedFile,
   type TlsMode,
@@ -48,6 +49,7 @@ export async function bumpPlatformVersion(
   configRepoDir: string,
   platformVersion: string,
   platformRepo?: string,
+  environment: EnvironmentName | "all" = "all",
 ): Promise<string[]> {
   if (!platformVersion) {
     throw new Error("platformVersion is required");
@@ -59,7 +61,11 @@ export async function bumpPlatformVersion(
 
   const release = YAML.parse(await readFile(releasePath, "utf8"));
   release.spec ??= {};
-  release.spec.targetRevision = platformVersion;
+  release.spec.environments ??= {};
+  for (const env of selectedEnvironments(environment)) {
+    release.spec.environments[env] ??= {};
+    release.spec.environments[env].targetRevision = platformVersion;
+  }
   if (platformRepo) {
     release.spec.repoURL = platformRepo;
   }
@@ -71,9 +77,18 @@ export async function bumpPlatformVersion(
   if (!Array.isArray(sources) || sources.length === 0) {
     throw new Error("argocd/root-applicationset.yaml does not contain spec.template.spec.sources");
   }
-  sources[0].targetRevision = platformVersion;
+  sources[0].targetRevision = "{{ .targetRevision }}";
   if (platformRepo) {
     sources[0].repoURL = platformRepo;
+  }
+  const elements = appSet?.spec?.generators?.[0]?.list?.elements;
+  if (!Array.isArray(elements)) {
+    throw new Error("argocd/root-applicationset.yaml does not contain spec.generators[0].list.elements");
+  }
+  for (const element of elements) {
+    if (selectedEnvironments(environment).includes(element.env)) {
+      element.targetRevision = platformVersion;
+    }
   }
   await writeFile(appSetPath, yaml(appSet));
   changed.push("argocd/root-applicationset.yaml");
@@ -92,7 +107,9 @@ export function generateConfigRepo(options: BootstrapOptions): GeneratedFile[] {
       metadata: { name: "temporal-platform" },
       spec: {
         repoURL: parsed.platformRepo,
-        targetRevision: parsed.platformVersion,
+        environments: Object.fromEntries(
+          environments.map((env) => [env, { targetRevision: parsed.platformVersion }]),
+        ),
         updatePolicy: "explicit-version-bump",
       },
     })),
@@ -210,7 +227,15 @@ function rootApplicationSet(options: BootstrapOptions): string {
     spec: {
       goTemplate: true,
       goTemplateOptions: ["missingkey=error"],
-      generators: [{ list: { elements: environments.map((env) => ({ env })) } }],
+      generators: [{
+        list: {
+          elements: environments.map((env) => ({
+            env,
+            namespace: `temporal-${env}`,
+            targetRevision: options.platformVersion,
+          })),
+        },
+      }],
       template: {
         metadata: {
           name: "temporal-platform-{{ .env }}",
@@ -224,7 +249,7 @@ function rootApplicationSet(options: BootstrapOptions): string {
           sources: [
             {
               repoURL: options.platformRepo,
-              targetRevision: options.platformVersion,
+              targetRevision: "{{ .targetRevision }}",
               path: "gitops/apps",
             },
             {
@@ -235,7 +260,7 @@ function rootApplicationSet(options: BootstrapOptions): string {
           ],
           destination: {
             server: "https://kubernetes.default.svc",
-            namespace: "temporal-{{ .env }}",
+            namespace: "{{ .namespace }}",
           },
           syncPolicy: {
             automated: { prune: true, selfHeal: true },
@@ -245,6 +270,10 @@ function rootApplicationSet(options: BootstrapOptions): string {
       },
     },
   });
+}
+
+function selectedEnvironments(environment: EnvironmentName | "all"): EnvironmentName[] {
+  return environment === "all" ? [...environments] : [environment];
 }
 
 function readme(options: BootstrapOptions): string {
@@ -262,7 +291,7 @@ This is a per-customer config repo for the shared Temporal platform repo.
 Keep only customer and environment-specific values here: domains, node counts,
 Azure IDs, AWS account roles, GCP identities, hosted zones, and TLS challenge
 choices. Shared defaults stay in the platform repo and are consumed by changing
-\`platform-release.yaml\`.
+per-environment target revisions in \`platform-release.yaml\`.
 
 Read [docs/gitops-model.md](docs/gitops-model.md) for the full two-repo model.
 `;
@@ -284,8 +313,8 @@ The platform repo owns production-tested defaults and common operations logic:
 - cert-manager annotations for the right challenge type.
 - Shared Argo CD Application and ApplicationSet patterns.
 
-Platform fixes should be released once, then adopted here by bumping
-\`spec.targetRevision\` in \`platform-release.yaml\`.
+Platform fixes should be released once, then adopted here by bumping the
+environment entries in \`platform-release.yaml\`.
 
 ## Config Repo
 

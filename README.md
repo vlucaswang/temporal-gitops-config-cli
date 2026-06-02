@@ -43,6 +43,15 @@ npx github:vlucaswang/temporal-gitops-config-cli platform:bump \
   --platform-version platform-v1.4.0
 ```
 
+Promote one environment first:
+
+```sh
+npx github:vlucaswang/temporal-gitops-config-cli platform:bump \
+  --repo ./acme-temporal-config \
+  --platform-version platform-v1.4.0 \
+  --environment uat
+```
+
 ## Validate
 
 ```sh
