@@ -47,6 +47,11 @@ Platform Helm chart sources use `$config/values/{{ .env }}/...` value files, so
 cluster-specific choices stay in the config repo while the chart logic and
 defaults stay in the platform repo.
 
+The CLI generator keeps platform chart wiring in a catalog list. As the platform
+repo grows beyond Redis, each chart entry gets its chart path, namespace prefix,
+value file name, and config-value generator without changing the Argo CD
+template shape.
+
 That keeps common fixes centralized while preserving a reviewable adoption step
 per customer and environment.
 

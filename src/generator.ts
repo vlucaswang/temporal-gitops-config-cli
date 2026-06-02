@@ -25,6 +25,24 @@ const bootstrapSchema = z.object({
   force: z.boolean(),
 });
 
+interface PlatformCatalogEntry {
+  name: string;
+  chartPath: string;
+  valuesFile: string;
+  namespacePrefix: string;
+  values: (options: BootstrapOptions, domain: string) => string;
+}
+
+const platformCatalog: PlatformCatalogEntry[] = [
+  {
+    name: "redis",
+    chartPath: "platform/charts/redis",
+    valuesFile: "redis.yaml",
+    namespacePrefix: "redis",
+    values: redisValues,
+  },
+];
+
 export function validateOptions(options: BootstrapOptions): BootstrapOptions {
   return bootstrapSchema.parse(options);
 }
@@ -139,7 +157,7 @@ export function generateConfigRepo(options: BootstrapOptions): GeneratedFile[] {
           },
         },
       })),
-      file(`values/${env}/redis.yaml`, redisValues(parsed, domain)),
+      ...platformCatalog.map((entry) => file(`values/${env}/${entry.valuesFile}`, entry.values(parsed, domain))),
     );
   }
 
@@ -275,16 +293,14 @@ function rootApplicationSet(options: BootstrapOptions): string {
 }
 
 function platformCatalogApplications(env: EnvironmentName, targetRevision: string): Record<string, string>[] {
-  return [
-    {
-      name: "redis",
-      env,
-      namespace: `redis-${env}`,
-      chartPath: "platform/charts/redis",
-      valuesFile: "redis.yaml",
-      targetRevision,
-    },
-  ];
+  return platformCatalog.map((entry) => ({
+    name: entry.name,
+    env,
+    namespace: `${entry.namespacePrefix}-${env}`,
+    chartPath: entry.chartPath,
+    valuesFile: entry.valuesFile,
+    targetRevision,
+  }));
 }
 
 function selectedEnvironments(environment: EnvironmentName | "all"): EnvironmentName[] {
