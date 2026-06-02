@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { bumpPlatformVersion, generateConfigRepo, writeConfigRepo } from "../src/generator.js";
-import type { BootstrapOptions } from "../src/types.js";
+import { cloudProviders, environments, tlsModes, type BootstrapOptions } from "../src/types.js";
 
 const baseOptions: BootstrapOptions = {
   outputDir: "/tmp/acme-temporal-config",
@@ -23,10 +23,14 @@ describe("generateConfigRepo", () => {
     const files = generateConfigRepo(baseOptions);
     const paths = files.map((file) => file.path);
 
-    expect(paths).toContain("environments/uat/cluster.yaml");
-    expect(paths).toContain("environments/prod/cluster.yaml");
+    for (const env of environments) {
+      expect(paths).toContain(`environments/${env}/cluster.yaml`);
+      expect(paths).toContain(`values/${env}/temporal.yaml`);
+      expect(paths).toContain(`values/${env}/edge.yaml`);
+    }
     expect(paths).toContain("platform-release.yaml");
     expect(paths).toContain("argocd/root-applicationset.yaml");
+    expect(paths.filter((filePath) => filePath.startsWith("environments/"))).toHaveLength(2);
 
     const uat = parse(find(files, "environments/uat/cluster.yaml"));
     const prod = parse(find(files, "environments/prod/cluster.yaml"));
@@ -36,6 +40,74 @@ describe("generateConfigRepo", () => {
     expect(uat.spec.cloud.provider).toBe("azure");
     expect(prod.spec.cloud.nodeCount).toBe(3);
     expect(prod.spec.tls.certManager.challenge.type).toBe("dns01");
+  });
+
+  it("generates cloud-specific placeholders for every supported cloud provider", () => {
+    for (const cloudProvider of cloudProviders) {
+      const files = generateConfigRepo({ ...baseOptions, cloudProvider });
+      const uat = parse(find(files, "environments/uat/cluster.yaml"));
+      const prod = parse(find(files, "environments/prod/cluster.yaml"));
+
+      expect(uat.spec.cloud.provider).toBe(cloudProvider);
+      expect(uat.spec.cloud.nodeCount).toBe(1);
+      expect(prod.spec.cloud.provider).toBe(cloudProvider);
+      expect(prod.spec.cloud.nodeCount).toBe(3);
+
+      switch (cloudProvider) {
+        case "kind":
+          expect(uat.spec.cloud.kind.loadBalancer).toBe("cloud-provider-kind");
+          break;
+        case "aws":
+          expect(Object.keys(uat.spec.cloud.aws)).toEqual(["accountId", "clusterRoleArn", "region"]);
+          break;
+        case "azure":
+          expect(Object.keys(uat.spec.cloud.azure)).toEqual([
+            "tenantId",
+            "subscriptionId",
+            "resourceGroup",
+            "workloadIdentityClientId",
+          ]);
+          break;
+        case "gcp":
+          expect(Object.keys(uat.spec.cloud.gcp)).toEqual(["projectId", "region", "workloadIdentityProvider"]);
+          break;
+        case "bare-metal":
+          expect(Object.keys(uat.spec.cloud.bareMetal)).toEqual(["loadBalancerPool"]);
+          break;
+      }
+    }
+  });
+
+  it("generates cert-manager settings for every supported TLS mode", () => {
+    for (const tlsMode of tlsModes) {
+      const files = generateConfigRepo({ ...baseOptions, tlsMode });
+      const prod = parse(find(files, "environments/prod/cluster.yaml"));
+
+      expect(prod.spec.tls.mode).toBe(tlsMode);
+      expect(prod.spec.tls.certManager.issuerKind).toBe("ClusterIssuer");
+
+      switch (tlsMode) {
+        case "self-signed":
+          expect(prod.spec.tls.certManager.issuerName).toBe("self-signed");
+          expect(prod.spec.tls.certManager.challenge).toBeUndefined();
+          break;
+        case "http01":
+          expect(prod.spec.tls.certManager.issuerName).toBe("letsencrypt-http01");
+          expect(prod.spec.tls.certManager.challenge).toEqual({
+            type: "http01",
+            ingressClassName: "kgateway",
+          });
+          break;
+        case "dns01":
+          expect(prod.spec.tls.certManager.issuerName).toBe("letsencrypt-dns01");
+          expect(prod.spec.tls.certManager.challenge).toEqual({
+            type: "dns01",
+            provider: "",
+            hostedZone: "",
+          });
+          break;
+      }
+    }
   });
 
   it("pins Argo CD to the platform repo and explicit platform version", () => {
