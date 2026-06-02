@@ -43,6 +43,10 @@ The generated `argocd/root-applicationset.yaml` points Argo CD at:
 1. the shared platform repo at an explicit `targetRevision`
 2. the customer config repo as the environment-specific values source
 
+Platform Helm chart sources use `$config/values/{{ .env }}/...` value files, so
+cluster-specific choices stay in the config repo while the chart logic and
+defaults stay in the platform repo.
+
 That keeps common fixes centralized while preserving a reviewable adoption step
 per customer and environment.
 
@@ -73,12 +77,14 @@ flowchart TB
   config["customer config repo\none repo per customer"]
   uat["environments/uat/values.yaml"]
   prod["environments/prod/values.yaml"]
+  values["values/<env>/*.yaml\nHelm value files"]
   pin["platform-release.yaml\nrepoURL + targetRevision"]
 
   cli --> settings
   settings --> config
   config --> uat
   config --> prod
+  config --> values
   config --> pin
 ```
 

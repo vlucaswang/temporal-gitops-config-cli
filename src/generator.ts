@@ -139,6 +139,7 @@ export function generateConfigRepo(options: BootstrapOptions): GeneratedFile[] {
           },
         },
       })),
+      file(`values/${env}/redis.yaml`, redisValues(parsed, domain)),
     );
   }
 
@@ -229,19 +230,16 @@ function rootApplicationSet(options: BootstrapOptions): string {
       goTemplateOptions: ["missingkey=error"],
       generators: [{
         list: {
-          elements: environments.map((env) => ({
-            env,
-            namespace: `temporal-${env}`,
-            targetRevision: options.platformVersion,
-          })),
+          elements: environments.flatMap((env) => platformCatalogApplications(env, options.platformVersion)),
         },
       }],
       template: {
         metadata: {
-          name: "temporal-platform-{{ .env }}",
+          name: "temporal-platform-{{ .name }}-{{ .env }}",
           labels: {
             "app.kubernetes.io/part-of": "temporal-platform",
             "temporal.io/environment": "{{ .env }}",
+            "temporal.io/platform-chart": "{{ .name }}",
           },
         },
         spec: {
@@ -250,7 +248,11 @@ function rootApplicationSet(options: BootstrapOptions): string {
             {
               repoURL: options.platformRepo,
               targetRevision: "{{ .targetRevision }}",
-              path: "gitops/apps",
+              path: "{{ .chartPath }}",
+              helm: {
+                releaseName: "{{ .name }}",
+                valueFiles: ["$config/values/{{ .env }}/{{ .valuesFile }}"],
+              },
             },
             {
               repoURL: options.configRepo,
@@ -272,8 +274,32 @@ function rootApplicationSet(options: BootstrapOptions): string {
   });
 }
 
+function platformCatalogApplications(env: EnvironmentName, targetRevision: string): Record<string, string>[] {
+  return [
+    {
+      name: "redis",
+      env,
+      namespace: `redis-${env}`,
+      chartPath: "platform/charts/redis",
+      valuesFile: "redis.yaml",
+      targetRevision,
+    },
+  ];
+}
+
 function selectedEnvironments(environment: EnvironmentName | "all"): EnvironmentName[] {
   return environment === "all" ? [...environments] : [environment];
+}
+
+function redisValues(options: BootstrapOptions, domain: string): string {
+  const tls = tlsConfig(options.tlsMode);
+  const certManager = typeof tls.certManager === "object" && tls.certManager !== null
+    ? { ...tls.certManager, enabled: true, dnsNames: [`redis.${domain}`] }
+    : { enabled: false };
+
+  return yaml({
+    tls: { certManager },
+  });
 }
 
 function readme(options: BootstrapOptions): string {
@@ -325,6 +351,11 @@ This repo owns only values that genuinely vary by customer or cluster:
 - cloud identities and account roles
 - TLS challenge mode and provider details
 - UAT and Prod environment overlays
+
+Argo CD consumes these values through the generated multi-source
+\`argocd/root-applicationset.yaml\`. Platform chart sources come from the shared
+platform repo; value files come from this config repo through the \`$config\`
+source reference.
 
 ## Release Flow
 

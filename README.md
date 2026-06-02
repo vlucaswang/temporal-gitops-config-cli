@@ -7,7 +7,8 @@ The target operating model is a two-repo split:
 - Platform repo: shared Helm chart catalog, production-tested defaults,
   NetworkPolicies, ServiceMonitors, and cert-manager conventions.
 - Config repo: one per customer, with `uat` and `prod` values that genuinely
-  vary by cluster.
+  vary by cluster. Generated Argo CD apps consume those values through
+  `$config/values/{{ .env }}/...` Helm value files.
 
 Read [docs/two-repo-gitops.md](docs/two-repo-gitops.md) for the complete model.
 

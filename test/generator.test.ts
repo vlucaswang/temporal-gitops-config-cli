@@ -27,6 +27,7 @@ describe("generateConfigRepo", () => {
       expect(paths).toContain(`environments/${env}/cluster.yaml`);
       expect(paths).toContain(`values/${env}/temporal.yaml`);
       expect(paths).toContain(`values/${env}/edge.yaml`);
+      expect(paths).toContain(`values/${env}/redis.yaml`);
     }
     expect(paths).toContain("platform-release.yaml");
     expect(paths).toContain("argocd/root-applicationset.yaml");
@@ -40,6 +41,11 @@ describe("generateConfigRepo", () => {
     expect(uat.spec.cloud.provider).toBe("azure");
     expect(prod.spec.cloud.nodeCount).toBe(3);
     expect(prod.spec.tls.certManager.challenge.type).toBe("dns01");
+
+    const redisUat = parse(find(files, "values/uat/redis.yaml"));
+    const redisProd = parse(find(files, "values/prod/redis.yaml"));
+    expect(redisUat.tls.certManager.dnsNames).toEqual(["redis.uat.temporal.acme.test"]);
+    expect(redisProd.tls.certManager.dnsNames).toEqual(["redis.temporal.acme.test"]);
   });
 
   it("generates cloud-specific placeholders for every supported cloud provider", () => {
@@ -118,15 +124,33 @@ describe("generateConfigRepo", () => {
     expect(appset.spec.template.spec.sources[0]).toMatchObject({
       repoURL: "https://github.com/example/platform.git",
       targetRevision: "{{ .targetRevision }}",
-      path: "gitops/apps",
+      path: "{{ .chartPath }}",
+      helm: {
+        releaseName: "{{ .name }}",
+        valueFiles: ["$config/values/{{ .env }}/{{ .valuesFile }}"],
+      },
     });
     expect(appset.spec.template.spec.sources[1]).toMatchObject({
       repoURL: "https://github.com/acme/temporal-config.git",
       ref: "config",
     });
     expect(elements).toEqual([
-      { env: "uat", namespace: "temporal-uat", targetRevision: "platform-v1.2.3" },
-      { env: "prod", namespace: "temporal-prod", targetRevision: "platform-v1.2.3" },
+      {
+        name: "redis",
+        env: "uat",
+        namespace: "redis-uat",
+        chartPath: "platform/charts/redis",
+        valuesFile: "redis.yaml",
+        targetRevision: "platform-v1.2.3",
+      },
+      {
+        name: "redis",
+        env: "prod",
+        namespace: "redis-prod",
+        chartPath: "platform/charts/redis",
+        valuesFile: "redis.yaml",
+        targetRevision: "platform-v1.2.3",
+      },
     ]);
   });
 
@@ -144,8 +168,22 @@ describe("generateConfigRepo", () => {
       expect(release.spec.environments.prod.targetRevision).toBe("platform-v1.2.4");
       expect(appset.spec.template.spec.sources[0].targetRevision).toBe("{{ .targetRevision }}");
       expect(appset.spec.generators[0].list.elements).toEqual([
-        { env: "uat", namespace: "temporal-uat", targetRevision: "platform-v1.2.4" },
-        { env: "prod", namespace: "temporal-prod", targetRevision: "platform-v1.2.4" },
+        {
+          name: "redis",
+          env: "uat",
+          namespace: "redis-uat",
+          chartPath: "platform/charts/redis",
+          valuesFile: "redis.yaml",
+          targetRevision: "platform-v1.2.4",
+        },
+        {
+          name: "redis",
+          env: "prod",
+          namespace: "redis-prod",
+          chartPath: "platform/charts/redis",
+          valuesFile: "redis.yaml",
+          targetRevision: "platform-v1.2.4",
+        },
       ]);
     } finally {
       await rm(dir, { force: true, recursive: true });
@@ -165,8 +203,22 @@ describe("generateConfigRepo", () => {
       expect(release.spec.environments.uat.targetRevision).toBe("platform-v1.2.4");
       expect(release.spec.environments.prod.targetRevision).toBe("platform-v1.2.3");
       expect(appset.spec.generators[0].list.elements).toEqual([
-        { env: "uat", namespace: "temporal-uat", targetRevision: "platform-v1.2.4" },
-        { env: "prod", namespace: "temporal-prod", targetRevision: "platform-v1.2.3" },
+        {
+          name: "redis",
+          env: "uat",
+          namespace: "redis-uat",
+          chartPath: "platform/charts/redis",
+          valuesFile: "redis.yaml",
+          targetRevision: "platform-v1.2.4",
+        },
+        {
+          name: "redis",
+          env: "prod",
+          namespace: "redis-prod",
+          chartPath: "platform/charts/redis",
+          valuesFile: "redis.yaml",
+          targetRevision: "platform-v1.2.3",
+        },
       ]);
     } finally {
       await rm(dir, { force: true, recursive: true });
