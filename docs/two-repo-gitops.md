@@ -61,52 +61,101 @@ per customer and environment.
 
 ```mermaid
 flowchart TB
-  platform["Platform repo\n100+ shared Helm charts"]
-  charts["platform/charts/*\nproduction-tested defaults"]
-  policies["baked contracts\nCiliumNetworkPolicy\nServiceMonitor\ncert-manager annotations"]
-  release["platform release tag\nplatform-vX.Y.Z"]
-  fix["shared platform fix\nexample: Prometheus duplicate timestamps"]
+  subgraph platform["Platform repo: k8s-templates"]
+    catalog["platform/catalog.yaml\nchart catalog"]
+    charts["platform/charts/*\nshared Helm charts"]
+    defaults["values.yaml\nproduction defaults"]
+    contracts["baked contracts\nCiliumNetworkPolicy\nServiceMonitor\ncert-manager TLS"]
+    appset["argocd/platform-catalog-applicationset.yaml\nApplicationSet pattern"]
+    validate["make validate\ncontract and smoke checks"]
+  end
 
-  platform --> charts
-  charts --> policies
+  fix["shared platform fix\nexample: Prometheus duplicate timestamps"]
+  release["platform release tag\nplatform-vX.Y.Z"]
+  customers["customer config repos\nexplicit version bump"]
+
   fix --> charts
-  policies --> release
+  catalog --> charts
+  charts --> defaults
+  charts --> contracts
+  catalog --> appset
+  defaults --> validate
+  contracts --> validate
+  appset --> validate
+  validate --> release
+  release --> customers
 ```
 
 ### Config repo
 
 ```mermaid
 flowchart TB
-  cli["temporal-gitops-config CLI\nbootstrap wizard"]
-  settings["selected settings\ncloud provider\nTLS challenge mode"]
-  config["customer config repo\none repo per customer"]
-  uat["environments/uat/values.yaml"]
-  prod["environments/prod/values.yaml"]
-  values["values/<env>/*.yaml\nHelm value files"]
-  pin["platform-release.yaml\nrepoURL + targetRevision"]
+  cli["temporal-gitops-config CLI\nTypeScript + commander"]
+  choices["bootstrap choices\ncloud provider\nTLS mode\ndomain\nrepo URLs"]
 
-  cli --> settings
-  settings --> config
-  config --> uat
-  config --> prod
-  config --> values
-  config --> pin
+  subgraph config["Customer config repo"]
+    releaseFile["platform-release.yaml\nper-env targetRevision"]
+    appset["argocd/root-applicationset.yaml\nmulti-source ApplicationSet"]
+    envUat["environments/uat/values.yaml\ncluster inputs"]
+    envProd["environments/prod/values.yaml\ncluster inputs"]
+    chartValues["values/uat/*.yaml\nvalues/prod/*.yaml\nchart values only"]
+    docs["docs/gitops-model.md\nlocal operating model"]
+  end
+
+  cli --> choices
+  choices --> releaseFile
+  choices --> appset
+  choices --> envUat
+  choices --> envProd
+  choices --> chartValues
+  choices --> docs
+  releaseFile --> appset
+  envUat --> chartValues
+  envProd --> chartValues
 ```
 
 ### Argo CD reconciliation
 
 ```mermaid
 flowchart LR
-  platformRelease["Platform repo\nplatform-vX.Y.Z"]
-  configRepo["Customer config repo\nUAT and Prod values"]
-  appset["Argo CD ApplicationSet\nmulti-source app"]
-  uatCluster["UAT cluster"]
-  prodCluster["Prod cluster"]
+  subgraph sources["Git sources"]
+    platformRelease["Platform repo\nplatform-vX.Y.Z"]
+    configRepo["Customer config repo\nHEAD"]
+  end
 
-  platformRelease --> appset
-  configRepo --> appset
-  appset --> uatCluster
-  appset --> prodCluster
+  subgraph app["Generated Argo CD Application"]
+    platformSource["source 1\nchart path from platform repo"]
+    configSource["source 2\nref: config"]
+    valueFiles["$config/values/<env>/<chart>.yaml"]
+  end
+
+  uat["UAT cluster\nfirst reconciliation"]
+  prod["Prod cluster\npromoted later"]
+
+  platformRelease --> platformSource
+  configRepo --> configSource
+  configSource --> valueFiles
+  platformSource --> valueFiles
+  valueFiles --> uat
+  valueFiles --> prod
+```
+
+### Version promotion
+
+```mermaid
+sequenceDiagram
+  participant Platform as Platform repo
+  participant CLI as TypeScript CLI
+  participant Config as Customer config repo
+  participant UAT as UAT Argo CD
+  participant Prod as Prod Argo CD
+
+  Platform->>Platform: Tag platform-v1.4.0
+  CLI->>Config: platform:bump --environment uat
+  Config->>UAT: Reconcile platform-v1.4.0
+  UAT-->>Config: Scenario validation passes
+  CLI->>Config: platform:bump --environment prod
+  Config->>Prod: Reconcile platform-v1.4.0
 ```
 
 ## Versioning And Release Flow

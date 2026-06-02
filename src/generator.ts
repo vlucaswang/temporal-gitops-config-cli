@@ -373,6 +373,69 @@ Argo CD consumes these values through the generated multi-source
 platform repo; value files come from this config repo through the \`$config\`
 source reference.
 
+## Diagrams
+
+### Repository split
+
+\`\`\`mermaid
+flowchart TB
+  subgraph platform["Platform repo"]
+    catalog["platform/catalog.yaml\\nchart catalog"]
+    charts["platform/charts/*\\nshared Helm charts"]
+    contracts["chart contracts\\nCiliumNetworkPolicy\\nServiceMonitor\\ncert-manager TLS"]
+    release["platform release tag\\n${options.platformVersion}"]
+  end
+
+  subgraph config["${options.customer} config repo"]
+    releaseFile["platform-release.yaml\\nper-env targetRevision"]
+    appset["argocd/root-applicationset.yaml\\nmulti-source ApplicationSet"]
+    envFiles["environments/uat and prod\\ncluster inputs"]
+    values["values/<env>/*.yaml\\nchart values"]
+  end
+
+  catalog --> charts
+  charts --> contracts
+  contracts --> release
+  release --> releaseFile
+  releaseFile --> appset
+  envFiles --> values
+  values --> appset
+\`\`\`
+
+### Argo CD reconciliation
+
+\`\`\`mermaid
+flowchart LR
+  platformSource["${options.platformRepo}\\n${options.platformVersion}"]
+  configSource["${options.configRepo}\\nHEAD"]
+  app["Argo CD ApplicationSet\\nargocd/root-applicationset.yaml"]
+  uat["UAT cluster"]
+  prod["Prod cluster"]
+
+  platformSource --> app
+  configSource --> app
+  app --> uat
+  app --> prod
+\`\`\`
+
+### Promotion path
+
+\`\`\`mermaid
+sequenceDiagram
+  participant Platform as Platform repo
+  participant CLI as TypeScript CLI
+  participant Config as ${options.customer} config repo
+  participant UAT as UAT Argo CD
+  participant Prod as Prod Argo CD
+
+  Platform->>Platform: Tag platform-vX.Y.Z
+  CLI->>Config: platform:bump --environment uat
+  Config->>UAT: Reconcile new platform version
+  UAT-->>Config: Scenario validation passes
+  CLI->>Config: platform:bump --environment prod
+  Config->>Prod: Reconcile same platform version
+\`\`\`
+
 ## Release Flow
 
 1. Fix or upgrade a shared behavior in the platform repo.
